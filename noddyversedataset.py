@@ -7,6 +7,12 @@ import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset
 
 
+def parse_geology(pth, layer):
+    """Return geology voxel model int labels from .g12.gz"""
+    mod = np.loadtxt(pth, dtype=int).reshape(200, 200, 200)
+    return np.transpose(mod, (0, 2, 1))[layer, :, :]
+
+
 def parse_geophysics(pth):
     """Return forward model values from Noddy geophysics .mag.gz and .grv.gz"""
     return np.loadtxt(pth, skiprows=8)
@@ -28,6 +34,7 @@ class NoddyDataset(Dataset):
     def __init__(
         self,
         model_dir,
+        load_geology=False,
     ):
         super().__init__()
 
@@ -35,6 +42,7 @@ class NoddyDataset(Dataset):
         self.m_names = sorted(
             set([p.name[:-7] for p in sorted(self.m_dir.iterdir())])
         )  # List of unique model names in model_dir - (named after a timestamp)
+        self.load_geology = load_geology
         self.len = len(self.m_names)
         self.label = self.m_dir.stem.split("_")  # Event 1,2 are STRAT, TILT
 
@@ -44,6 +52,13 @@ class NoddyDataset(Dataset):
         f = self.m_dir / self.m_names[index]
         self.gt_mag = torch.from_numpy(parse_geophysics((f).with_suffix(".mag.gz")))
         self.gt_grv = torch.from_numpy(parse_geophysics((f).with_suffix(".grv.gz")))
+        if self.load_geology:
+            # This is mildly expensive - Could pass layer to np.loadtxt skips?
+            self.data = {
+                "geo": parse_geology((f).with_suffix(".g12.gz"), layer=0),
+                **self.data,
+            }
+
         self.data = {
             "gt": torch.stack((self.gt_mag, self.gt_grv), dim=0),
             **self.data,
@@ -60,12 +75,17 @@ class NoddyDataset(Dataset):
 
 
 noddy_model_dir = Path(r"data/DYKE_FOLD_FAULT")
-dset = NoddyDataset(noddy_model_dir)
+dset = NoddyDataset(noddy_model_dir, load_geology=True)
+
 
 import matplotlib.pyplot as plt
 
-for i in range(20):
-    fig, (inp, out) = plt.subplots(1, 2)
+for i in range(5):
+    sample = dset[i]
+    fig, (inp, out, geo) = plt.subplots(1, 3)
+    plt.suptitle(sample["label"])
+    inp.imshow(sample["gt"][0])
+    out.imshow(sample["gt"][1])
+    geo.imshow(sample["geo"])
+    plt.show()
 
-    inp.imshow(dset[i]["gt"][0])
-    out.imshow(dset[i]["gt"][1])
