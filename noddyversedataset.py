@@ -21,8 +21,8 @@ inverse_labels = {v: k for k, v in labels.items()}
 
 def parse_geology(pth, layer):
     """Return geology voxel model int labels from .g12.gz"""
-    mod = np.loadtxt(pth, dtype=int).reshape(200, 200, 200)
-    return np.transpose(mod, (0, 2, 1))[layer, :, :]
+    model = np.loadtxt(pth, dtype=int).reshape(200, 200, 200)
+    return np.transpose(model, (0, 2, 1))[layer, :, :]
 
 
 def parse_geophysics(pth):
@@ -36,54 +36,64 @@ def encode_label(pth):
     return torch.tensor([labels[e] for e in pth.split("_")], dtype=torch.uint8)
 
 
+def subsample(parameters: dict, scale=1, *rasters):
+    input_cell_size = 20
     """Run a mock-survey on a geophysical raster.
     Designed for use with Noddy forward models, as part of a Pytorch dataset.
 
-    Params:
-        raster: input Tensor forward model
-        line_spacing: in meters, spacing between parallel lines
-        sampling_rate: in meters, spacing between cells along line
-        cs: ground truth cell size, 20 m for Noddy models
-        heading: "NS" for columns as lines, "EW" for rows as lines
+    Args:
+        parameters:
+            line_spacing: in meters, spacing between parallel lines
+            sample_spacing: in meters, spacing between points along line
+            heading: "NS" for columns as lines, "EW" for rows as lines
+        scale: multiplier for low resolution (vs high resolution)
+        input_cell_size: ground truth cell size, 20 m for Noddy models
+        *rasters: input Tensor forward model
 
     The Noddyverse dataset is a suite of 1 Million 200x200x200 petrophysical
     voxels, at a designated size of 20 m per pixel. Forward models in the
     Noddyverse (https://doi.org/10.5194/essd-14-381-2022) are generated
     as per below:
-        | Geophysical forward models were calculated using a Fourier domain
-        | formulation using reflective padding to minimise (but not remove)
-        | boundary effects. The forward gravity and magnetic field calculations
-        | assume a flat top surface with a 100 m sensor elevation above this
-        | surface and the Earth's magnetic field with vertical inclination,
-        | zero declination and an intensity of 50000nT.
+        Geophysical forward models were calculated using a Fourier domain
+        formulation using reflective padding to minimise (but not remove)
+        boundary effects. The forward gravity and magnetic field calculations
+        assume a flat top surface with a 100 m sensor elevation above this
+        surface and the Earth's magnetic field with vertical inclination,
+        zero declination and an intensity of 50000nT.
 
-    Note that every single cell of the forward model has a calulated forward
+    Note that every single cell of the forward model has a calculated forward
     model, i.e. they are 200x200, with no interpolation (for a 20 m cell size)
 
     We simulate an airborne survey, by selecting rows (flight lines) of pixels
-    at every n m. We can (but not by default) also subsample along rows.
+    at every n m. We can (but not by default) also subsample along rows (ss).
 
     """
-    ls = int(line_spacing / cell_size)
-    sr = int(sample_spacing / cell_size)
-    if heading.upper() in ["EW", "E", "W"]:
-        ls, sr = sr, ls  # swap convention to emulate survey direction
+    cs = input_cell_size
+    ss = int(parameters.get("sample_spacing") / cs)
+    ls = int(parameters.get("line_spacing") * scale / cs)
+
+    if parameters.get("heading").upper() in ["EW", "E", "W"]:
+        ls, ss = ss, ls  # swap convention to emulate survey direction
 
     x, y = np.meshgrid(np.arange(200), np.arange(200), indexing="xy")
-    x = cell_size * x[::ls, ::sr]
-    y = cell_size * y[::ls, ::sr]
-    zs = [raster[::ls, ::sr] for raster in rasters]
+    x = cs * x[::ls, ::ss]
+    y = cs * y[::ls, ::ss]
+    zs = [raster[::ls, ::ss] for raster in rasters]
 
     return x, y, zs
 
 
-def grid(x, y, z, cs=20, name="foward"):
+def grid(x, y, zs, ls: int = 20, cs_fac: int = 4):
+    in_cs: int = 20
     """Grid a subsampled noddy forward model.
 
     params:
-        x,y: x, y coordinates
+        x, y: x, y coordinates
         z: geophysical response value
-        cs: cell size for interpolating grid
+        line_spacing: sample line spacing, to calculate target cell_size
+        cs_fac: line spacing to cell size factor, typically 4 or 5
+        name: data_variable name
+        input_cell_size: Input model cell size, 20m for Noddyverse
 
     See docstring for subsample() for further notes.
     """
@@ -93,10 +103,8 @@ def grid(x, y, z, cs=20, name="foward"):
         region=[0, cs * 199, 0, cs * 199],
         spacing=cs,
         dims=["x", "y"],
-        data_names=name,
-    )
-
-    return grid_raster.get(name).values.astype(np.float32)
+            data_names="forward",
+        ).get("forward").values.astype(np.float32)
 
 
 class NoddyDataset(Dataset):
@@ -107,7 +115,7 @@ class NoddyDataset(Dataset):
     unique identifier accessible.
 
     Parameters:
-        model_dir: Path to numpy event history folder
+        model_dir: Path to Noddy root folder
         survey/augment: Do survey / augment. See method.
         load_geology: Optionally load the g12 voxel model, surface layer
         kwargs: Parameter dictionary for survey / augmentation
