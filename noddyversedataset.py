@@ -25,10 +25,17 @@ def parse_geology(pth, layer):
     return np.transpose(model, (0, 2, 1))[layer, :, :]
 
 
-def parse_geophysics(pth):
+def parse_geophysics(pth: Path, mag=False, grv=False):
     """Return forward model values from Noddy geophysics .mag.gz and .grv.gz"""
-    return np.loadtxt(pth, skiprows=8, dtype=np.float32)
 
+    files = (pth.with_suffix(".mag.gz"), pth.with_suffix(".grv.gz"))
+    if not grv:
+        files = [files[0]]
+    if not mag:
+        files = [files[1]]
+    for pth in files:
+        yield np.loadtxt(pth, skiprows=8, dtype=np.float32)
+    # return pd.read_csv(pth,sep="\t",skiprows=8,header=None,usecols=range(200),dtype=np.float32,na_filter=False,).values.astype(np.float32)
 
 
 def encode_label(pth):
@@ -97,12 +104,13 @@ def grid(x, y, zs, ls: int = 20, cs_fac: int = 4):
 
     See docstring for subsample() for further notes.
     """
+    for rz in zs:
+        gridder = vd.ScipyGridder("cubic").fit((x, y), rz)
 
-    grd = vd.ScipyGridder("cubic").fit((x, y), z)
-    grid_raster = grd.grid(
-        region=[0, cs * 199, 0, cs * 199],
-        spacing=cs,
-        dims=["x", "y"],
+        yield gridder.grid(
+            region=[0, in_cs * 200, 0, in_cs * 200],
+            spacing=ls / cs_fac,
+            dims=["x", "y"],
             data_names="forward",
         ).get("forward").values.astype(np.float32)
 
@@ -123,20 +131,35 @@ class NoddyDataset(Dataset):
 
     def __init__(
         self,
-        model_dir,
+        model_dir=None,
+        load_magnetics=True,
+        load_gravity=False,
         load_geology=False,
+        augment=False,
         **kwargs,
     ):
         super().__init__()
 
         self.m_dir = Path(model_dir)
-        self.m_names = sorted(
-            set([p.name[:-7] for p in sorted(self.m_dir.iterdir())])
-        )  # List of unique model names in model_dir - (named after a timestamp)
+        his_files = self.m_dir.glob("**/*.his*")
+        self.m_names = np.array(
+            [(p.parent.name, p.name[:-7]) for p in his_files]
+        ).astype(np.string_)
+        # List of unique folder/names in model_dir - (named after a timestamp)
+        # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
+        self.load_magnetics = load_magnetics
+        self.load_gravity = load_gravity
         self.load_geology = load_geology
-        self.kwargs = kwargs
         self.len = len(self.m_names)
-        self.label = self.m_dir.stem.split("_")  # Event 1,2 are STRAT, TILT
+        if augment:
+            self.augs = {
+                "hflip": augment.get("hflip", False),
+                "vflip": augment.get("vflip", False),
+                "rotate": augment.get("rotate", False),
+                "noise": augment.get("noise", False),
+            }
+        else:
+            self.augs = None
 
     def _augment(self, *tensors):
         if self.augs.get("hflip") and torch.rand(1) < 0.5:
@@ -146,86 +169,79 @@ class NoddyDataset(Dataset):
         if self.augs.get("rotate") and torch.rand(1) < 0.5:
             (TF.rotate(t, 90) for t in tensors)
         if self.augs.get("noise"):
-            # add x % random noise to datasets.
-            pass
+            raise NotImplementedError
             # (add_noise(t, noise) for t in tensors)
 
     def _process(self, index):
         """Convert parsed numpy arrays to tensors and augment"""
+        parent, name = self.m_names[index]
+        self.parent = str(parent, encoding="utf-8")
+        f = self.m_dir / self.parent / str(name, encoding="utf-8")
+
         self.data = {"label": encode_label(self.parent)}
 
-        if "survey" in self.kwargs:
-            sp = {"ls": 20, "ss": 20, "cs": 20, "h": "NS", **self.kwargs["survey"]}
-            x, y, (self.hr_mag, self.hr_grv) = subsample(
-                *sp.values(), self.gt_mag, self.gt_grv
-            )
-            self.hr_mag = torch.from_numpy(grid(x, y, self.hr_mag))
-            self.hr_grv = torch.from_numpy(grid(x, y, self.hr_grv))
-            self.data = {
-                "hr": torch.stack((self.hr_mag, self.hr_grv), dim=0),
-                **self.data,
-            }
+        _data = [
+            torch.from_numpy(g)
+            for g in parse_geophysics(f, self.load_magnetics, self.load_gravity)
+        ]
+        self.data = {"gt": torch.stack(_data, dim=0), **self.data}
 
         if self.load_geology:
             # This is mildly expensive - Could pass layer to np.loadtxt skips?
             self.data = {
-                "geo": parse_geology((f).with_suffix(".g12.gz"), layer=0),
+                "geo": torch.from_numpy(
+                    parse_geology((f).with_suffix(".g12.gz"), layer=0)
+                ),
                 **self.data,
             }
-
-        if "augment" in self.kwargs:
-            self.augs = {
-                "hflip": True,
-                "vflip": True,
-                "rotate": False,
-                "noise": False,
-                **self.kwargs["augs"],
-            }
-
-            raise NotImplementedError("Need to troubleshoot Tensor shapes")
-            self._augment([t for t in self.data[""]])
 
     def __len__(self):
         return self.len
 
     def __getitem__(self, index):
-        self.data = {"label": self.label}
         self._process(index)
+
+        if self.augs:
+            raise NotImplementedError("Need to troubleshoot Tensor shapes")
+            self._augment([t for t in self.data[""]])
 
         return self.data
 
 
-import matplotlib.pyplot as plt
-noddy_model_dir = Path(r"data/DYKE_FOLD_FAULT")
-dset = NoddyDataset(noddy_model_dir, load_geology=True)
+class HRLRNoddyDataset(NoddyDataset):
+    """Load a Noddy dataset with high- and low-resolution grids
+    If Heading is not specified, it will be randomly selected from NS or EW
+    """
 
-dset = NoddyDataset(
-    noddy_model_dir,
-    load_geology=True,
-    survey={"ls": 400, "ss": 20},
-    # augment={},
-)
+    def __init__(self, **kwargs):
+        self.scale = kwargs.get("scale", 2)
+        self.random_heading = not bool(kwargs.get("heading"))
+        self.sp = {
+            "line_spacing": kwargs.get("line_spacing", 20),
+            "sample_spacing": kwargs.get("sample_spacing", 20),
+            "heading": kwargs.get("heading", None),  # Default will be random
+        }
+        super().__init__(**kwargs)
 
-for i in range(5):
-    sample = dset[i]
+    def _process(self, index):
+        super()._process(index)
 
-    fig, axes = plt.subplots(3, 3, constrained_layout=True)
-    # [ax.set_axis_off() for ax in axes.ravel()]
-    [ax.set_xlim(0, 200) for ax in axes.ravel()]
-    [ax.set_ylim(0, 200) for ax in axes.ravel()]
-    ([mag, grv, geo], [mgd, ggd, ax1_off], [mdf, gdf, ax2_off]) = axes
+        hls = self.sp["line_spacing"]
+        lls = hls * self.scale
+        if self.random_heading:
+            if torch.rand(1) < 0.5:
+                self.sp["heading"] = "NS"
+            else:
+                self.sp["heading"] = "EW"
 
-    ax1_off.set_axis_off()
-    ax2_off.set_axis_off()
-    plt.suptitle(", ".join(sample["label"]))
-    mag.imshow(sample["gt"][0])
-    grv.imshow(sample["gt"][1])
-    geo.imshow(sample["geo"])
+        hr_x, hr_y, _hr_zs = subsample(self.sp, 1, *self.data["gt"])
+        _hr_grids = [
+            torch.from_numpy(g) for g in grid(hr_x, hr_y, _hr_zs, ls=hls, cs_fac=4)
+        ]
+        self.data = {"hr": torch.stack(_hr_grids, dim=0), **self.data}
 
-    mgd.imshow(sample["hr"][0])
-    ggd.imshow(sample["hr"][1])
-
-    mdf.imshow(sample["gt"][0] - sample["hr"][0])
-    gdf.imshow(sample["gt"][1] - sample["hr"][1])
-    plt.show()
-
+        lr_x, lr_y, _lr_zs = subsample(self.sp, self.scale, *self.data["gt"])
+        _lr_grids = [
+            torch.from_numpy(g) for g in grid(lr_x, lr_y, _lr_zs, ls=lls, cs_fac=4)
+        ]
+        self.data = {"lr": torch.stack(_lr_grids, dim=0), **self.data}
