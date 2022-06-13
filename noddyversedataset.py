@@ -6,6 +6,18 @@ import torch
 import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset
 
+labels = {
+    "STRAT": 0,
+    "FOLD": 1,
+    "FAULT": 2,
+    "UNC": 3,
+    "DYKE": 4,
+    "PLUG": 5,
+    "SHEAR-ZONE": 6,
+    "TILT": 7,
+}
+inverse_labels = {v: k for k, v in labels.items()}
+
 
 def parse_geology(pth, layer):
     """Return geology voxel model int labels from .g12.gz"""
@@ -18,7 +30,12 @@ def parse_geophysics(pth):
     return np.loadtxt(pth, skiprows=8, dtype=np.float32)
 
 
-def subsample(line_spacing, sample_spacing, cell_size, heading, *rasters):
+
+def encode_label(pth):
+    """Return integer encoding for event history in Noddyverse"""
+    return torch.tensor([labels[e] for e in pth.split("_")], dtype=torch.uint8)
+
+
     """Run a mock-survey on a geophysical raster.
     Designed for use with Noddy forward models, as part of a Pytorch dataset.
 
@@ -127,13 +144,7 @@ class NoddyDataset(Dataset):
 
     def _process(self, index):
         """Convert parsed numpy arrays to tensors and augment"""
-        f = self.m_dir / self.m_names[index]
-        self.gt_mag = torch.from_numpy(parse_geophysics((f).with_suffix(".mag.gz")))
-        self.gt_grv = torch.from_numpy(parse_geophysics((f).with_suffix(".grv.gz")))
-        self.data = {
-            "gt": torch.stack((self.gt_mag, self.gt_grv), dim=0),
-            **self.data,
-        }
+        self.data = {"label": encode_label(self.parent)}
 
         if "survey" in self.kwargs:
             sp = {"ls": 20, "ss": 20, "cs": 20, "h": "NS", **self.kwargs["survey"]}
