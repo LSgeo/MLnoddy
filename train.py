@@ -1,25 +1,36 @@
-import datetime
-from types import SimpleNamespace
-
-from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
-
-import noddyversedataset as nv
-
-cfg = SimpleNamespace()
-cfg.scale = 2
-cfg.hr_linespacing = 12 * 20
-cfg.load_magnetics = True
-cfg.load_gravity = False
-cfg.load_geology = False
-cfg.batch_size = 4
-cfg.shuffle = True
-cfg.pin_memory = True
-cfg.num_workers = 0
-
 if __name__ == "__main__":
+
+    import logging
+    import sys
+    from types import SimpleNamespace
+
+    from torch.utils.data import DataLoader
+    import matplotlib.pyplot as plt
+
+    import noddyverse.noddyversedataset as nv
+
+    log = logging.getLogger(__name__)
+    log.setLevel(logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(
+        logging.Formatter("[%(asctime)s] [%(levelname)s] - %(message)s")
+    )
+    log.addHandler(handler)
+
+    cfg = SimpleNamespace()
+    cfg.scale = 2
+    cfg.hr_linespacing = 12 * 20
+    cfg.load_magnetics = True
+    cfg.load_gravity = True
+    cfg.load_geology = True
+    cfg.batch_size = 32
+    cfg.shuffle = False
+    cfg.pin_memory = True
+    cfg.num_workers = 16
+
     train_dataset = nv.HRLRNoddyDataset(
-        model_dir="data/models/",
+        model_dir="noddyverse",
         load_magnetics=cfg.load_magnetics,
         load_gravity=cfg.load_gravity,
         load_geology=cfg.load_geology,
@@ -33,6 +44,7 @@ if __name__ == "__main__":
         shuffle=cfg.shuffle,
         pin_memory=cfg.pin_memory,
         num_workers=cfg.num_workers,
+        persistent_workers=bool(cfg.num_workers),
     )
 
     for batch in train_loader:
@@ -73,4 +85,5 @@ if __name__ == "__main__":
             else:
                 geo.set_axis_off()
 
-            plt.show()
+            plt.savefig("test.png")
+            plt.close()
