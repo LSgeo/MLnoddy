@@ -10,7 +10,7 @@ labels = {
     "STRAT": 0,
     "FOLD": 1,
     "FAULT": 2,
-    "UNC": 3,
+    "UNCONFORMITY": 3,
     "DYKE": 4,
     "PLUG": 5,
     "SHEAR-ZONE": 6,
@@ -151,6 +151,8 @@ class NoddyDataset(Dataset):
         self.load_gravity = load_gravity
         self.load_geology = load_geology
         self.len = len(self.m_names)
+        if not self.len:
+            raise FileNotFoundError(f"No files found in {self.m_dir.absolute()}")
         if augment:
             self.augs = {
                 "hflip": augment.get("hflip", False),
@@ -176,7 +178,7 @@ class NoddyDataset(Dataset):
         """Convert parsed numpy arrays to tensors and augment"""
         parent, name = self.m_names[index]
         self.parent = str(parent, encoding="utf-8")
-        f = self.m_dir / self.parent / str(name, encoding="utf-8")
+        f = self.m_dir / self.parent / "models_by_code" / "models" / self.parent / str(name, encoding="utf-8")
 
         self.data = {"label": encode_label(self.parent)}
 
