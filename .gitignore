@@ -1,2 +1,4 @@
 noddyverse_data/
+
 *pycache*
+*.egg*
