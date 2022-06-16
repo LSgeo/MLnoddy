@@ -178,7 +178,14 @@ class NoddyDataset(Dataset):
         """Convert parsed numpy arrays to tensors and augment"""
         parent, name = self.m_names[index]
         self.parent = str(parent, encoding="utf-8")
-        f = self.m_dir / self.parent / "models_by_code" / "models" / self.parent / str(name, encoding="utf-8")
+        f = (
+            self.m_dir
+            / self.parent
+            / "models_by_code"
+            / "models"
+            / self.parent
+            / str(name, encoding="utf-8")
+        )
 
         self.data = {"label": encode_label(self.parent)}
 
@@ -211,9 +218,13 @@ class NoddyDataset(Dataset):
 
 
 class HRLRNoddyDataset(NoddyDataset):
-    """Load a Noddy dataset with high- and low-resolution grids
+    __doc__ = (
+        """Load a Noddy dataset with high- and low-resolution grids
+
     If Heading is not specified, it will be randomly selected from NS or EW
     """
+        + super().__doc__
+    )
 
     def __init__(self, **kwargs):
         self.scale = kwargs.get("scale", 2)
