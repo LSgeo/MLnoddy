@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import numpy as np
-import verde as vd
 import torch
 import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset
@@ -43,78 +42,6 @@ def encode_label(pth):
     return torch.tensor([labels[e] for e in pth.split("_")], dtype=torch.uint8)
 
 
-def subsample(parameters: dict, scale=1, *rasters):
-    input_cell_size = 20
-    """Run a mock-survey on a geophysical raster.
-    Designed for use with Noddy forward models, as part of a Pytorch dataset.
-
-    Args:
-        parameters:
-            line_spacing: in meters, spacing between parallel lines
-            sample_spacing: in meters, spacing between points along line
-            heading: "NS" for columns as lines, "EW" for rows as lines
-        scale: multiplier for low resolution (vs high resolution)
-        input_cell_size: ground truth cell size, 20 m for Noddy models
-        *rasters: input Tensor forward model
-
-    The Noddyverse dataset is a suite of 1 Million 200x200x200 petrophysical
-    voxels, at a designated size of 20 m per pixel. Forward models in the
-    Noddyverse (https://doi.org/10.5194/essd-14-381-2022) are generated
-    as per below:
-        Geophysical forward models were calculated using a Fourier domain
-        formulation using reflective padding to minimise (but not remove)
-        boundary effects. The forward gravity and magnetic field calculations
-        assume a flat top surface with a 100 m sensor elevation above this
-        surface and the Earth's magnetic field with vertical inclination,
-        zero declination and an intensity of 50000nT.
-
-    Note that every single cell of the forward model has a calculated forward
-    model, i.e. they are 200x200, with no interpolation (for a 20 m cell size)
-
-    We simulate an airborne survey, by selecting rows (flight lines) of pixels
-    at every n m. We can (but not by default) also subsample along rows (ss).
-
-    """
-    cs = input_cell_size
-    ss = int(parameters.get("sample_spacing") / cs)
-    ls = int(parameters.get("line_spacing") * scale / cs)
-
-    if parameters.get("heading").upper() in ["EW", "E", "W"]:
-        ls, ss = ss, ls  # swap convention to emulate survey direction
-
-    x, y = np.meshgrid(np.arange(200), np.arange(200), indexing="xy")
-    x = cs * x[::ls, ::ss]
-    y = cs * y[::ls, ::ss]
-    zs = [raster[::ls, ::ss] for raster in rasters]
-
-    return x, y, zs
-
-
-def grid(x, y, zs, ls: int = 20, cs_fac: int = 4):
-    in_cs: int = 20
-    """Grid a subsampled noddy forward model.
-
-    params:
-        x, y: x, y coordinates
-        z: geophysical response value
-        line_spacing: sample line spacing, to calculate target cell_size
-        cs_fac: line spacing to cell size factor, typically 4 or 5
-        name: data_variable name
-        input_cell_size: Input model cell size, 20m for Noddyverse
-
-    See docstring for subsample() for further notes.
-    """
-    for rz in zs:
-        gridder = vd.ScipyGridder("cubic").fit((x, y), rz)
-
-        yield gridder.grid(
-            region=[0, in_cs * 200, 0, in_cs * 200],
-            spacing=ls / cs_fac,
-            dims=["x", "y"],
-            data_names="forward",
-        ).get("forward").values.astype(np.float32)
-
-
 class NoddyDataset(Dataset):
     """Create a Dataset to access magnetic, gravity, and surface geology
     from the Noddyverse (https://doi.org/10.5194/essd-14-381-2022)
@@ -135,6 +62,7 @@ class NoddyDataset(Dataset):
         load_magnetics=True,
         load_gravity=False,
         load_geology=False,
+        encode_label=False,
         augment=False,
         **kwargs,
     ):
@@ -150,9 +78,12 @@ class NoddyDataset(Dataset):
         self.load_magnetics = load_magnetics
         self.load_gravity = load_gravity
         self.load_geology = load_geology
+        self.encode_label = encode_label
         self.len = len(self.m_names)
         if not self.len:
-            raise FileNotFoundError(f"No files found in {self.m_dir.absolute()}")
+            raise FileNotFoundError(
+                f"{len(his_files)} files found in {self.m_dir.absolute()}"
+            )
         if augment:
             self.augs = {
                 "hflip": augment.get("hflip", False),
@@ -180,19 +111,23 @@ class NoddyDataset(Dataset):
         self.parent = str(parent, encoding="utf-8")
         f = (
             self.m_dir
-            / self.parent
-            / "models_by_code"
-            / "models"
-            / self.parent
+            # / self.parent
+            # / "models_by_code"
+            # / "models"
+            # / self.parent
             / str(name, encoding="utf-8")
         )
 
-        self.data = {"label": encode_label(self.parent)}
+        if self.encode_label:
+            self.data = {"label": encode_label(self.parent)}
+        else:
+            self.data = {}
 
         _data = [
             torch.from_numpy(g)
             for g in parse_geophysics(f, self.load_magnetics, self.load_gravity)
         ]
+
         self.data = {"gt": torch.stack(_data, dim=0), **self.data}
 
         if self.load_geology:
@@ -215,46 +150,3 @@ class NoddyDataset(Dataset):
             self._augment([t for t in self.data[""]])
 
         return self.data
-
-
-class HRLRNoddyDataset(NoddyDataset):
-    __doc__ = (
-        """Load a Noddy dataset with high- and low-resolution grids
-
-    If Heading is not specified, it will be randomly selected from NS or EW
-    """
-        + super().__doc__
-    )
-
-    def __init__(self, **kwargs):
-        self.scale = kwargs.get("scale", 2)
-        self.random_heading = not bool(kwargs.get("heading"))
-        self.sp = {
-            "line_spacing": kwargs.get("line_spacing", 20),
-            "sample_spacing": kwargs.get("sample_spacing", 20),
-            "heading": kwargs.get("heading", None),  # Default will be random
-        }
-        super().__init__(**kwargs)
-
-    def _process(self, index):
-        super()._process(index)
-
-        hls = self.sp["line_spacing"]
-        lls = hls * self.scale
-        if self.random_heading:
-            if torch.rand(1) < 0.5:
-                self.sp["heading"] = "NS"
-            else:
-                self.sp["heading"] = "EW"
-
-        hr_x, hr_y, _hr_zs = subsample(self.sp, 1, *self.data["gt"])
-        _hr_grids = [
-            torch.from_numpy(g) for g in grid(hr_x, hr_y, _hr_zs, ls=hls, cs_fac=4)
-        ]
-        self.data = {"hr": torch.stack(_hr_grids, dim=0), **self.data}
-
-        lr_x, lr_y, _lr_zs = subsample(self.sp, self.scale, *self.data["gt"])
-        _lr_grids = [
-            torch.from_numpy(g) for g in grid(lr_x, lr_y, _lr_zs, ls=lls, cs_fac=4)
-        ]
-        self.data = {"lr": torch.stack(_lr_grids, dim=0), **self.data}
