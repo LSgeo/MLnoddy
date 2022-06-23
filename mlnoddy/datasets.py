@@ -105,6 +105,18 @@ class NoddyDataset(Dataset):
             raise NotImplementedError
             # (add_noise(t, noise) for t in tensors)
 
+    def _norm(self, grid, norm_type="min_max_clip"):
+        # TODO use our previously designed norm method
+        # OR rEad tHOsE PaPeRS
+        if norm_type == "sample_min_max":
+            return ((grid - grid.min()) / (grid.max() - grid.min()) * 2) - 1
+        if norm_type == "min_max_clip":
+            clip = 5000
+            grid[grid < -clip] = -clip
+            grid[grid > clip] = clip
+            grid = ((grid - -clip) / (clip - -clip) * 2) - 1
+            return grid
+
     def _process(self, index):
         """Convert parsed numpy arrays to tensors and augment"""
         parent, name = self.m_names[index]
