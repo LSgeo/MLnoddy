@@ -81,9 +81,7 @@ class NoddyDataset(Dataset):
         self.encode_label = encode_label
         self.len = len(self.m_names)
         if not self.len:
-            raise FileNotFoundError(
-                f"{len(his_files)} files found in {self.m_dir.absolute()}"
-            )
+            raise FileNotFoundError(f"No files found in {self.m_dir.absolute()}")
         if augment:
             self.augs = {
                 "hflip": augment.get("hflip", False),
@@ -119,37 +117,37 @@ class NoddyDataset(Dataset):
 
     def _process(self, index):
         """Convert parsed numpy arrays to tensors and augment"""
+        self.data = {}
+
         parent, name = self.m_names[index]
         self.parent = str(parent, encoding="utf-8")
         f = (
             self.m_dir
-            # / self.parent
-            # / "models_by_code"
-            # / "models"
-            # / self.parent
+            / self.parent
+            / "models_by_code"
+            / "models"
+            / self.parent
             / str(name, encoding="utf-8")
         )
 
         if self.encode_label:
-            self.data = {"label": encode_label(self.parent)}
-        else:
-            self.data = {}
+            self.data["label"] = encode_label(self.parent)
 
         _data = [
-            torch.from_numpy(g)
+            torch.from_numpy(self._norm(g))
             for g in parse_geophysics(f, self.load_magnetics, self.load_gravity)
         ]
 
-        self.data = {"gt": torch.stack(_data, dim=0), **self.data}
+        if self.load_magnetics and self.load_gravity:
+            self.data["gt_grid"] = torch.stack(_data, dim=0)
+        else:
+            self.data["gt_grid"] = _data
 
         if self.load_geology:
             # This is mildly expensive - Could pass layer to np.loadtxt skips?
-            self.data = {
-                "geo": torch.from_numpy(
-                    parse_geology((f).with_suffix(".g12.gz"), layer=0)
-                ),
-                **self.data,
-            }
+            self.data["geo"] = torch.from_numpy(
+                parse_geology((f).with_suffix(".g12.gz"), layer=0)
+            )
 
     def __len__(self):
         return self.len
