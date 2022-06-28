@@ -1,41 +1,28 @@
 if __name__ == "__main__":
 
-    import logging
-    import sys
     from types import SimpleNamespace
 
-    from torch.utils.data import DataLoader
     import matplotlib.pyplot as plt
+    from torch.utils.data import DataLoader
 
-    import noddyverse.noddyversedataset as nv
-
-    log = logging.getLogger(__name__)
-    log.setLevel(logging.INFO)
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.INFO)
-    handler.setFormatter(
-        logging.Formatter("[%(asctime)s] [%(levelname)s] - %(message)s")
-    )
-    log.addHandler(handler)
+    import datasets as nv
 
     cfg = SimpleNamespace()
-    cfg.scale = 2
-    cfg.hr_linespacing = 12 * 20
+    cfg.encode_label = True
     cfg.load_magnetics = True
     cfg.load_gravity = True
     cfg.load_geology = True
-    cfg.batch_size = 32
-    cfg.shuffle = False
-    cfg.pin_memory = True
-    cfg.num_workers = 16
+    cfg.batch_size = 1
+    cfg.shuffle = True
+    cfg.pin_memory = False
+    cfg.num_workers = 0
 
-    train_dataset = nv.HRLRNoddyDataset(
-        model_dir="noddyverse",
+    train_dataset = nv.NoddyDataset(
+        model_dir=r"D:\luke\Noddy_data\noddyverse_train_data",
+        encode_label=cfg.encode_label,
         load_magnetics=cfg.load_magnetics,
         load_gravity=cfg.load_gravity,
         load_geology=cfg.load_geology,
-        scale=cfg.scale,
-        line_spacing=cfg.hr_linespacing,
     )
 
     train_loader = DataLoader(
@@ -48,9 +35,10 @@ if __name__ == "__main__":
     )
 
     for batch in train_loader:
-        for i in range(len(batch)):
+        for i in range(cfg.batch_size):
+
             fig, axes = plt.subplots(3, 3, constrained_layout=True, figsize=(8, 10))
-            label = [nv.inverse_labels[e] for e in batch["label"].numpy()[i]]
+            label = [nv.inverse_labels[e] for e in batch["label"][i].numpy()]
 
             plt.suptitle("_".join(label))
             # [ax.set_axis_off() for ax in axes.ravel()]
@@ -61,23 +49,17 @@ if __name__ == "__main__":
             ax1_off.set_axis_off()
             ax2_off.set_axis_off()
             n = 0
-            # plt.suptitle(", ".join((batch["label"])))
+
             if cfg.load_magnetics:
                 mag.set_title("Magnetics Ground-truth")
-                mag.imshow(batch["gt"][i][0])
-                mgd.set_title("Magnetics HR")
-                mgd.imshow(batch["hr"][i][0])
-                mdf.set_title("Magnetics LR")
-                mdf.imshow(batch["lr"][i][0])
+                tmi = mag.imshow(batch["gt_grid"][i][0])
+                plt.colorbar(tmi, cax = mgd)
                 n = 1
 
             if cfg.load_gravity:
                 grv.set_title("Gravity Ground-truth")
-                grv.imshow(batch["gt"][i][n])
-                ggd.set_title("Gravity HR")
-                ggd.imshow(batch["hr"][i][n])
-                gdf.set_title("Gravity LR")
-                gdf.imshow(batch["lr"][i][n])
+                g = grv.imshow(batch["gt_grid"][i][n])
+                plt.colorbar(g, cax = ggd)
 
             if cfg.load_geology:
                 geo.set_title("Surface Geology")
@@ -85,5 +67,5 @@ if __name__ == "__main__":
             else:
                 geo.set_axis_off()
 
-            plt.savefig("test.png")
+            plt.savefig("test.png", facecolor="white", transparent=False)
             plt.close()

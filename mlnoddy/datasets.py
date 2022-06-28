@@ -105,15 +105,18 @@ class NoddyDataset(Dataset):
 
     def _norm(self, grid, norm_type="min_max_clip"):
         # TODO use our previously designed norm method
+        # TODO derive stats for normalising GRAVITY data
         # OR rEad tHOsE PaPeRS
         if norm_type == "sample_min_max":
             return ((grid - grid.min()) / (grid.max() - grid.min()) * 2) - 1
-        if norm_type == "min_max_clip":
-            clip = 5000
+        elif norm_type == "min_max_clip":
+            clip = 5_000
             grid[grid < -clip] = -clip
             grid[grid > clip] = clip
             grid = ((grid - -clip) / (clip - -clip) * 2) - 1
             return grid
+        else:
+            raise NotImplementedError("Unsupported normalisation method")
 
     def _process(self, index):
         """Convert parsed numpy arrays to tensors and augment"""
