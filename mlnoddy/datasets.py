@@ -41,6 +41,26 @@ def encode_label(pth):
     """Return integer encoding for event history in Noddyverse"""
     return torch.tensor([labels[e] for e in pth.split("_")], dtype=torch.uint8)
 
+class Norm():
+    def __init__(self, clip=5_000):
+        # TODO use our previously designed norm method
+        # TODO derive stats for normalising GRAVITY data
+        # OR rEad tHOsE PaPeRS
+        self.max = clip
+        self.min = -clip
+        assert self.min < self.max
+    
+    def min_max_clip(self, grid, inverse=False):
+        grid[grid < self.min] = self.min
+        grid[grid > self.max] = self.max
+        if not inverse:
+            return ((grid - self.min) / (self.max - self.min) * 2) - 1
+        else:
+            return ((grid + 1) / 2) * (self.max - self.min) + self.min # Copilot written!
+
+    def sample_min_max(self, grid, inverse=False):
+        return ((grid - grid.min()) / (grid.max() - grid.min()) * 2) - 1
+
 
 class NoddyDataset(Dataset):
     """Create a Dataset to access magnetic, gravity, and surface geology
@@ -68,6 +88,7 @@ class NoddyDataset(Dataset):
     ):
         super().__init__()
 
+        self.norm = Norm(clip=5000).min_max_clip
         self.m_dir = Path(model_dir)
         his_files = self.m_dir.glob("**/*.his*")
         self.m_names = np.array(
@@ -103,20 +124,6 @@ class NoddyDataset(Dataset):
             raise NotImplementedError
             # (add_noise(t, noise) for t in tensors)
 
-    def _norm(self, grid, norm_type="min_max_clip"):
-        # TODO use our previously designed norm method
-        # TODO derive stats for normalising GRAVITY data
-        # OR rEad tHOsE PaPeRS
-        if norm_type == "sample_min_max":
-            return ((grid - grid.min()) / (grid.max() - grid.min()) * 2) - 1
-        elif norm_type == "min_max_clip":
-            clip = 5_000
-            grid[grid < -clip] = -clip
-            grid[grid > clip] = clip
-            grid = ((grid - -clip) / (clip - -clip) * 2) - 1
-            return grid
-        else:
-            raise NotImplementedError("Unsupported normalisation method")
 
     def _process(self, index):
         """Convert parsed numpy arrays to tensors and augment"""
@@ -137,7 +144,7 @@ class NoddyDataset(Dataset):
             self.data["label"] = encode_label(self.parent)
 
         _data = [
-            torch.from_numpy(self._norm(g))
+            torch.from_numpy(self.norm(g))
             for g in parse_geophysics(f, self.load_magnetics, self.load_gravity)
         ]
 
