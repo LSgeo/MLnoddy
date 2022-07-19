@@ -41,24 +41,29 @@ def encode_label(pth):
     """Return integer encoding for event history in Noddyverse"""
     return torch.tensor([labels[e] for e in pth.split("_")], dtype=torch.uint8)
 
-class Norm():
+
+class Norm:
     def __init__(self, clip=5_000):
         # TODO use our previously designed norm method
         # TODO derive stats for normalising GRAVITY data
         # OR rEad tHOsE PaPeRS
+        self.clip = clip
         self.max = clip
         self.min = -clip
         assert self.min < self.max
     
-    def min_max_clip(self, grid, inverse=False):
+    def min_max_clip(self, grid):
+        """Clip to specified range and min-max normalise to range [-1, 1]"""
         grid[grid < self.min] = self.min
         grid[grid > self.max] = self.max
-        if not inverse:
             return ((grid - self.min) / (self.max - self.min) * 2) - 1
-        else:
-            return ((grid + 1) / 2) * (self.max - self.min) + self.min # Copilot written!
 
-    def sample_min_max(self, grid, inverse=False):
+    def inverse_mmc(self, grid):
+        f"""Inverse of min_max_clip, limited to +-{self.clip}"""
+        return ((grid + 1) / 2) * (self.max - self.min) + self.min
+
+    def sample_min_max(self, grid):
+        """Simple min-max normalisation unique to presented sample"""
         return ((grid - grid.min()) / (grid.max() - grid.min()) * 2) - 1
 
 
