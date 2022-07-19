@@ -83,7 +83,6 @@ class NoddyDataset(Dataset):
         load_gravity=False,
         load_geology=False,
         encode_label=False,
-        augment=False,
         **kwargs,
     ):
         super().__init__()
@@ -91,10 +90,10 @@ class NoddyDataset(Dataset):
         self.norm = Norm(clip=5000).min_max_clip
         self.m_dir = Path(model_dir)
         his_files = self.m_dir.glob("**/*.his*")
+        # List of unique folder/names in model_dir - (named after a timestamp)
         self.m_names = np.array(
             [(p.parent.name, p.name[:-7]) for p in his_files]
         ).astype(np.string_)
-        # List of unique folder/names in model_dir - (named after a timestamp)
         # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
         self.load_magnetics = load_magnetics
         self.load_gravity = load_gravity
@@ -103,27 +102,6 @@ class NoddyDataset(Dataset):
         self.len = len(self.m_names)
         if not self.len:
             raise FileNotFoundError(f"No files found in {self.m_dir.absolute()}")
-        if augment:
-            self.augs = {
-                "hflip": augment.get("hflip", False),
-                "vflip": augment.get("vflip", False),
-                "rotate": augment.get("rotate", False),
-                "noise": augment.get("noise", False),
-            }
-        else:
-            self.augs = None
-
-    def _augment(self, *tensors):
-        if self.augs.get("hflip") and torch.rand(1) < 0.5:
-            (TF.hflip(t) for t in tensors)
-        if self.augs.get("vflip") and torch.rand(1) < 0.5:
-            (TF.vflip(t) for t in tensors)
-        if self.augs.get("rotate") and torch.rand(1) < 0.5:
-            (TF.rotate(t, 90) for t in tensors)
-        if self.augs.get("noise"):
-            raise NotImplementedError
-            # (add_noise(t, noise) for t in tensors)
-
 
     def _process(self, index):
         """Convert parsed numpy arrays to tensors and augment"""
@@ -164,9 +142,4 @@ class NoddyDataset(Dataset):
 
     def __getitem__(self, index):
         self._process(index)
-
-        if self.augs:
-            raise NotImplementedError("Need to troubleshoot Tensor shapes")
-            self._augment([t for t in self.data[""]])
-
         return self.data
