@@ -51,12 +51,12 @@ class Norm:
         self.max = clip
         self.min = -clip
         assert self.min < self.max
-    
+
     def min_max_clip(self, grid):
         """Clip to specified range and min-max normalise to range [-1, 1]"""
         grid[grid < self.min] = self.min
         grid[grid > self.max] = self.max
-            return ((grid - self.min) / (self.max - self.min) * 2) - 1
+        return ((grid - self.min) / (self.max - self.min) * 2) - 1
 
     def inverse_mmc(self, grid):
         f"""Inverse of min_max_clip, limited to +-{self.clip}"""
@@ -74,10 +74,12 @@ class NoddyDataset(Dataset):
     The data are returned concatenated, with the geology model and
     unique identifier accessible.
 
-    Parameters:
+    Args:
         model_dir: Path to Noddy root folder
-        survey/augment: Do survey / augment. See method.
+        load_magnetics: Load magnetic data
+        load_gravity: Load gravity data
         load_geology: Optionally load the g12 voxel model, surface layer
+        encode_label: Encode the event history as a tensor
         kwargs: Parameter dictionary for survey / augmentation
     """
 
@@ -127,7 +129,7 @@ class NoddyDataset(Dataset):
             self.data["label"] = encode_label(self.parent)
 
         _data = [
-            torch.from_numpy(self.norm(g))
+            torch.from_numpy(self.norm(g)).unsqueeze(0)
             for g in parse_geophysics(f, self.load_magnetics, self.load_gravity)
         ]
 
@@ -138,6 +140,8 @@ class NoddyDataset(Dataset):
 
         if self.load_geology:
             # This is mildly expensive - Could pass layer to np.loadtxt skips?
+            # It would be good to slice this too.
+            # TODO confirm 0 is top (surface) layer ("ground truth" geology map)
             self.data["geo"] = torch.from_numpy(
                 parse_geology((f).with_suffix(".g12.gz"), layer=0)
             )
