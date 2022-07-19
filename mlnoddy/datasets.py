@@ -21,7 +21,7 @@ inverse_labels = {v: k for k, v in labels.items()}
 def parse_geology(pth, layer):
     """Return geology voxel model int labels from .g12.gz"""
     model = np.loadtxt(pth, dtype=int).reshape(200, 200, 200)
-    return np.transpose(model, (0, 2, 1))[layer, :, :]
+    return np.ascontiguousarray(np.transpose(model, (0, 2, 1))[layer, :, :])
 
 
 def parse_geophysics(pth: Path, mag=False, grv=False):
@@ -33,8 +33,8 @@ def parse_geophysics(pth: Path, mag=False, grv=False):
     if not mag:
         files = [files[1]]
     for pth in files:
-        yield np.loadtxt(pth, skiprows=8, dtype=np.float32)
-    # return pd.read_csv(pth,sep="\t",skiprows=8,header=None,usecols=range(200),dtype=np.float32,na_filter=False,).values.astype(np.float32)
+        yield np.ascontiguousarray(np.loadtxt(pth, skiprows=8, dtype=np.float32))
+    # yield pd.read_csv(pth,sep="\t",skiprows=8,header=None,usecols=range(200),dtype=np.float32,na_filter=False,).values.astype(np.float32)
 
 
 def encode_label(pth):
