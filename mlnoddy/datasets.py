@@ -1,3 +1,5 @@
+import time
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -80,6 +82,7 @@ class NoddyDataset(Dataset):
         load_gravity: Load gravity data
         load_geology: Optionally load the g12 voxel model, surface layer
         encode_label: Encode the event history as a tensor
+        m_names_precompute: Precomputed list of model names - useful for workers
         kwargs: Parameter dictionary for survey / augmentation
     """
 
@@ -90,18 +93,27 @@ class NoddyDataset(Dataset):
         load_gravity=False,
         load_geology=False,
         encode_label=False,
+        m_names_precompute=None,
         **kwargs,
     ):
         super().__init__()
 
         self.norm = Norm(clip=5000).min_max_clip
         self.m_dir = Path(model_dir)
-        his_files = self.m_dir.glob("**/*.his*")
+        
+        if m_names_precompute is None:
+            t0 = time.perf_counter()
+            # A reasonable speedup can be had by computing this once and sharing
+            # to all dataloader workers.
+            logging.getLogger(__name__).debug(f"Computing model names")
+            his_files = self.m_dir.glob("**/*.his*")
+            m_names_precompute = [(p.parent.name, p.name[:-7]) for p in his_files]
+            m_names_precompute = np.array(m_names_precompute).astype(np.string_)
+
         # List of unique folder/names in model_dir - (named after a timestamp)
-        self.m_names = np.array(
-            [(p.parent.name, p.name[:-7]) for p in his_files]
-        ).astype(np.string_)
         # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
+        self.m_names = m_names_precompute
+       
         self.load_magnetics = load_magnetics
         self.load_gravity = load_gravity
         self.load_geology = load_geology
