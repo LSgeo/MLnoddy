@@ -1,18 +1,20 @@
 if __name__ == "__main__":
 
+    from pathlib import Path
     from types import SimpleNamespace
 
     import matplotlib.pyplot as plt
+    import numpy as np
     from torch.utils.data import DataLoader
 
     import datasets as nv
 
     cfg = SimpleNamespace()
-    cfg.encode_label = True
+    cfg.encode_label = False
     cfg.load_magnetics = True
-    cfg.load_gravity = True
-    cfg.load_geology = True
-    cfg.batch_size = 1
+    cfg.load_gravity = False
+    cfg.load_geology = False
+    cfg.batch_size = None  # Disable automatic batching for iterable dataset
     cfg.shuffle = True
     cfg.pin_memory = False
     cfg.num_workers = 0
@@ -24,6 +26,13 @@ if __name__ == "__main__":
         load_gravity=cfg.load_gravity,
         load_geology=cfg.load_geology,
     )
+
+    model_names = model_names = [
+        (p.parent.name, p.name[:-7]) for p in Path(cfg.train_path).glob("**/*.his*")
+    ]
+    model_names = np.array(model_names).astype(np.string_)
+
+    # train_dataset = nv.NoddyIterableDataset(start=0, end=16, model_dir=r"D:\luke\Noddy_data\noddyverse_train_data", model_names=model_names)
 
     train_loader = DataLoader(
         train_dataset,
@@ -53,13 +62,13 @@ if __name__ == "__main__":
             if cfg.load_magnetics:
                 mag.set_title("Magnetics Ground-truth")
                 tmi = mag.imshow(batch["gt_grid"][i][0])
-                plt.colorbar(tmi, cax = mgd)
+                plt.colorbar(tmi, cax=mgd)
                 n = 1
 
             if cfg.load_gravity:
                 grv.set_title("Gravity Ground-truth")
                 g = grv.imshow(batch["gt_grid"][i][n])
-                plt.colorbar(g, cax = ggd)
+                plt.colorbar(g, cax=ggd)
 
             if cfg.load_geology:
                 geo.set_title("Surface Geology")
