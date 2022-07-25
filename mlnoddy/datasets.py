@@ -121,7 +121,10 @@ class NoddyDataset(Dataset):
         self.encode_label = encode_label
         self.len = len(self.m_names)
         if not self.len:
-            raise FileNotFoundError(f"No files found in {self.m_dir.absolute()}")
+            if not self.m_dir.exists():
+                raise FileNotFoundError(f"{self.m_dir.absolute()} does not exist")
+            else:
+                raise FileNotFoundError(f"No files found in {self.m_dir.absolute()}")
 
     def _process(self, index):
         """Convert parsed numpy arrays to tensors and augment"""
