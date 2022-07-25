@@ -94,6 +94,7 @@ class NoddyDataset(Dataset):
         load_geology=False,
         encode_label=False,
         m_names_precompute=None,
+        limit_length=-1,
         **kwargs,
     ):
         super().__init__()
@@ -112,7 +113,7 @@ class NoddyDataset(Dataset):
 
         # List of unique folder/names in model_dir - (named after a timestamp)
         # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
-        self.m_names = m_names_precompute
+        self.m_names = m_names_precompute[:limit_length]
        
         self.load_magnetics = load_magnetics
         self.load_gravity = load_gravity
@@ -148,7 +149,7 @@ class NoddyDataset(Dataset):
         if self.load_magnetics and self.load_gravity:
             self.data["gt_grid"] = torch.stack(_data, dim=0)
         else:
-            self.data["gt_grid"] = _data
+            self.data["gt_grid"] = _data[0]
 
         if self.load_geology:
             # This is mildly expensive - Could pass layer to np.loadtxt skips?
