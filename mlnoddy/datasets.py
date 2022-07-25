@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset #, IterableDataset, get_worker_info
 
 labels = {
     "STRAT": 0,
@@ -101,7 +101,7 @@ class NoddyDataset(Dataset):
 
         self.norm = Norm(clip=5000).min_max_clip
         self.m_dir = Path(model_dir)
-        
+
         if m_names_precompute is None:
             t0 = time.perf_counter()
             # A reasonable speedup can be had by computing this once and sharing
@@ -114,7 +114,7 @@ class NoddyDataset(Dataset):
         # List of unique folder/names in model_dir - (named after a timestamp)
         # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
         self.m_names = m_names_precompute[:limit_length]
-       
+
         self.load_magnetics = load_magnetics
         self.load_gravity = load_gravity
         self.load_geology = load_geology
@@ -165,3 +165,25 @@ class NoddyDataset(Dataset):
     def __getitem__(self, index):
         self._process(index)
         return self.data
+
+
+# class NoddyIterableDataset(IterableDataset):
+#     """derp"""
+
+#     def __init__(self, start:int, end:int, model_dir:Path, model_names):
+#         super().__init__()
+#         self.start = start
+#         self.end = end
+#         self.file_list = model_names
+
+#     def __iter__(self):
+#         worker_info = get_worker_info()
+#         if worker_info is None:
+#             iter_start = self.start
+#             iter_end = self.end
+#         else:
+#             worker_id = worker_info.id
+#             per_worker = int(np.ceil((self.end - self.start) / float(worker_info.num_workers)))
+#             iter_start = self.start + worker_id * per_worker
+#             iter_end = min(iter_start + per_worker, self.end)
+#             return iter(range(iter_start, iter_end))
