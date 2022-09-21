@@ -1,0 +1,112 @@
+dataset_grid_param:
+  load_magnetics: true
+  load_gravity: false
+  load_geology: false
+  clip: 5000
+use_comet: true
+num_workers: 8
+eval_type: noddyverse-4
+train_dataset:
+  dataset:
+    name: noddyverse_dataset
+    args:
+      root_path: D:/luke/Noddy_data/noddyverse_train_data
+      repeat: 1
+      limit_length: 8000
+      hr_line_spacing: 4
+      sample_spacing: 20
+      heading: NS
+  wrapper:
+    name: noddyverse_wrapper
+    args:
+      is_val: false
+      inp_size: 45
+      scale_min: 4
+      scale_max: 4
+  batch_size: 8
+val_dataset:
+  dataset:
+    name: noddyverse_dataset
+    args:
+      root_path: D:/luke/Noddy_data/noddyverse_val_data
+      repeat: 1
+      limit_length: 1600
+      hr_line_spacing: 4
+      sample_spacing: 20
+      heading: NS
+  wrapper:
+    name: noddyverse_wrapper
+    args:
+      is_val: false
+      inp_size: 45
+      scale_min: 4
+      scale_max: 4
+  batch_size: 8
+data_norm:
+  inp:
+    sub:
+    - 0
+    div:
+    - 1
+  gt:
+    sub:
+    - 0
+    div:
+    - 1
+model:
+  name: lte
+  args:
+    encoder_spec:
+      name: swinir
+      args:
+        no_upsampling: true
+        in_chans: 1
+    imnet_spec:
+      name: mlp
+      args:
+        out_dim: 1
+        hidden_list:
+        - 256
+        - 256
+        - 256
+    hidden_dim: 256
+optimizer:
+  name: adam
+  args:
+    lr: 0.0003
+epoch_max: 10
+multi_step_lr:
+  milestones:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  - 8
+  gamma: 0.5
+epoch_val: 1
+epoch_save: 9
+visually_nice_val_samples:
+- 1
+- 18
+- 68
+- 93
+- 127
+- 147
+- 152
+- 156
+- 163
+- 183
+- 186
+- 204
+- 212
+- 236
+- 255
+- 263
+- 343
+- 390
+- 450
+- 460
+rgb_range: 2
