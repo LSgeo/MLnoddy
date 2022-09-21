@@ -61,7 +61,7 @@ class Norm:
         return ((grid - self.min) / (self.max - self.min) * 2) - 1
 
     def inverse_mmc(self, grid):
-        f"""Inverse of min_max_clip, limited to +-{self.clip}"""
+        """Inverse of min_max_clip, limited to +-self.clip"""
         return ((grid + 1) / 2) * (self.max - self.min) + self.min
 
     def sample_min_max(self, grid):
@@ -95,11 +95,12 @@ class NoddyDataset(Dataset):
         encode_label=False,
         m_names_precompute=None,
         limit_length=-1,
+        clip=5000,
         **kwargs,
     ):
         super().__init__()
 
-        self.norm = Norm(clip=5000).min_max_clip
+        self.norm = Norm(clip=clip).min_max_clip
         self.m_dir = Path(model_dir)
 
         if m_names_precompute is None:
@@ -143,6 +144,8 @@ class NoddyDataset(Dataset):
 
         if self.encode_label:
             self.data["label"] = encode_label(self.parent)
+
+        # self.data["gt_path"] = torch.tensor(name.astype(np.string_))
 
         _data = [
             torch.from_numpy(self.norm(g)).unsqueeze(0)
