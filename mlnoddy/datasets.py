@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
-from torch.utils.data import Dataset #, IterableDataset, get_worker_info
+from torch.utils.data import Dataset  # , IterableDataset, get_worker_info
 
 labels = {
     "STRAT": 0,
@@ -45,14 +45,15 @@ def encode_label(pth):
 
 
 class Norm:
-    def __init__(self, clip=5_000):
+    def __init__(self, clip_min=-5000, clip_max=5000):
         # TODO use our previously designed norm method
-        # TODO derive stats for normalising GRAVITY data
         # OR rEad tHOsE PaPeRS
-        self.clip = clip
-        self.max = clip
-        self.min = -clip
-        assert self.min < self.max
+        """Defaults are suitable for noddyverse TMI"""
+
+        self.min = clip_min
+        self.max = clip_max
+        if self.min >= self.max:
+            raise ValueError(f"Min ({self.min}) must be less than Max ({self.max})")
 
     def min_max_clip(self, grid):
         """Clip to specified range and min-max normalise to range [-1, 1]"""
@@ -95,12 +96,12 @@ class NoddyDataset(Dataset):
         encode_label=False,
         m_names_precompute=None,
         limit_length=-1,
-        clip=5000,
+        norm=None,
         **kwargs,
     ):
         super().__init__()
 
-        self.norm = Norm(clip=clip).min_max_clip
+        self.norm = Norm(clip_min=norm[0], clip_max=norm[1]).min_max_clip
         self.m_dir = Path(model_dir)
 
         if m_names_precompute is None:
