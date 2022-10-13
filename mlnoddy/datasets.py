@@ -102,6 +102,7 @@ class NoddyDataset(Dataset):
         super().__init__()
 
         self.norm = Norm(clip_min=norm[0], clip_max=norm[1]).min_max_clip
+        self.unorm = Norm(clip_min=norm[0], clip_max=norm[1]).inverse_mmc
         self.m_dir = Path(model_dir)
 
         if m_names_precompute is None:
