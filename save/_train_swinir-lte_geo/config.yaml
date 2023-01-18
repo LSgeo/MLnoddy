@@ -19,7 +19,7 @@ train_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      is_val: false
+      crop: false
       inp_size: 45
       scale_min: 4
       scale_max: 4
@@ -37,7 +37,7 @@ val_dataset:
   wrapper:
     name: noddyverse_wrapper
     args:
-      is_val: false
+      crop: false
       inp_size: 45
       scale_min: 4
       scale_max: 4
