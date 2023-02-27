@@ -36,7 +36,7 @@ cd "${SCRATCH}"
 pigz -dk "${HISGZ_FILE}"
 echo "SCRATCH is ${SCRATCH}, RESULTS is ${RESULTS}"
 
-for ALT in {0100..4000..20}; do
+for ALT in {0100..4100..20}; do
   sed /Altitude/c\ "\        Altitude\        = ${ALT}.00" "${HIS_NAME}.his" \
     > "${TEMP_HIS}"
 
