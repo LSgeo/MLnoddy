@@ -20,6 +20,17 @@ labels = {
 inverse_labels = {v: k for k, v in labels.items()}
 
 
+def load_noddy_csv(csv_path):
+    """Return list of .his files present in Noddy10k. N10K is used for
+    the test set, but these are included in the 1M model directories.
+    This list serves as a list of files to disclude from loading in trn/val.
+    """
+    lpath = Path(csv_path)
+    paths = lpath.read_text().split(",")[6::5]
+    events = lpath.read_text().split(",")[10::5]
+    return [(e.replace(" ", "_").split()[0], p.split("/")[2]) for e, p in zip(events, paths)]
+
+
 def parse_geology(pth, layer):
     """Return geology voxel model int labels from .g12.gz"""
     model = np.loadtxt(pth, dtype=int).reshape(200, 200, 200)
@@ -71,7 +82,7 @@ class Norm:
 
 
 class NoddyDataset(Dataset):
-    """Create a Dataset to access magnetic, gravity, and surface geology
+    """Dataset to access magnetic, gravity, and surface geology
     from the Noddyverse (https://doi.org/10.5194/essd-14-381-2022)
 
     The data are returned concatenated, with the geology model and
@@ -94,8 +105,9 @@ class NoddyDataset(Dataset):
         load_gravity=False,
         load_geology=False,
         encode_label=False,
-        m_names_precompute=None,
-        limit_length=-1,
+        m_names_precompute: np.ndarray = None,  # with datatype np.string_
+        blocklist=None,
+        use_dset_slice=[0,-1],
         norm=None,
         **kwargs,
     ):
@@ -104,19 +116,16 @@ class NoddyDataset(Dataset):
         self.norm = Norm(clip_min=norm[0], clip_max=norm[1]).min_max_clip
         self.unorm = Norm(clip_min=norm[0], clip_max=norm[1]).inverse_mmc
         self.m_dir = Path(model_dir)
-
         if m_names_precompute is None:
-            t0 = time.perf_counter()
-            # A reasonable speedup can be had by computing this once and sharing
-            # to all dataloader workers.
-            logging.getLogger(__name__).debug(f"Computing model names")
-            his_files = self.m_dir.glob("**/*.his*")
-            m_names_precompute = [(p.parent.name, p.name[:-7]) for p in his_files]
+            noddylist_list = set(load_noddy_csv(kwargs["noddylist"]))
+            blocklist_list = set(load_noddy_csv(blocklist) if blocklist else [])
+            m_names_precompute = [his for his in noddylist_list if his not in blocklist_list]
             m_names_precompute = np.array(m_names_precompute).astype(np.string_)
 
         # List of unique folder/names in model_dir - (named after a timestamp)
         # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
-        self.m_names = m_names_precompute[:limit_length]
+        self.m_names = m_names_precompute[use_dset_slice[0]:use_dset_slice[1]]
+        logging.getLogger(__name__).info(f"Using dataset slice in [{use_dset_slice[0]}, {use_dset_slice[1]}]")
 
         self.load_magnetics = load_magnetics
         self.load_gravity = load_gravity
