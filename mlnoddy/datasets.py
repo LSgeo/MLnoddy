@@ -121,9 +121,11 @@ class NoddyDataset(Dataset):
             blocklist_list = set(load_noddy_csv(blocklist) if blocklist else [])
             m_names_precompute = [his for his in noddylist_list if his not in blocklist_list]
             m_names_precompute = np.array(m_names_precompute).astype(np.string_)
+            # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
+            if kwargs.get("events") is not None:
+                event_filter = [e in h[0] for h in m_names_precompute for e in events]
+                m_names_precompute = m_names_precompute[event_filter]
 
-        # List of unique folder/names in model_dir - (named after a timestamp)
-        # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
         self.m_names = m_names_precompute[use_dset_slice[0]:use_dset_slice[1]]
         logging.getLogger(__name__).info(f"Using dataset slice in [{use_dset_slice[0]}, {use_dset_slice[1]}]")
 
@@ -177,9 +179,10 @@ class NoddyDataset(Dataset):
             )
 
     def __len__(self):
-        return self.len
+        return self.len * self.repeat
 
     def __getitem__(self, index):
+        index = index % self.len  # for repeating
         self._process(index)
         return self.data
 
