@@ -28,7 +28,9 @@ def load_noddy_csv(csv_path):
     lpath = Path(csv_path)
     paths = lpath.read_text().split(",")[6::5]
     events = lpath.read_text().split(",")[10::5]
-    return [(e.replace(" ", "_").split()[0], p.split("/")[2]) for e, p in zip(events, paths)]
+    return [
+        (e.replace(" ", "_").split()[0], p.split("/")[2]) for e, p in zip(events, paths)
+    ]
 
 
 def parse_geology(pth, layer):
@@ -107,7 +109,7 @@ class NoddyDataset(Dataset):
         encode_label=False,
         m_names_precompute: np.ndarray = None,  # with datatype np.string_
         blocklist=None,
-        use_dset_slice=[0,-1],
+        use_dset_slice=[0, -1],
         norm=None,
         **kwargs,
     ):
@@ -117,17 +119,21 @@ class NoddyDataset(Dataset):
         self.unorm = Norm(clip_min=norm[0], clip_max=norm[1]).inverse_mmc
         self.m_dir = Path(model_dir)
         if m_names_precompute is None:
-            noddylist_list = set(load_noddy_csv(kwargs["noddylist"]))
-            blocklist_list = set(load_noddy_csv(blocklist) if blocklist else [])
-            m_names_precompute = [his for his in noddylist_list if his not in blocklist_list]
+            noddylist_list = load_noddy_csv(kwargs["noddylist"])
+            blocklist_list = load_noddy_csv(blocklist) if blocklist else []
+            m_names_precompute = [
+                his for his in noddylist_list if his not in blocklist_list
+            ]
             m_names_precompute = np.array(m_names_precompute).astype(np.string_)
             # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
             if kwargs.get("events") is not None:
                 event_filter = [e in h[0] for h in m_names_precompute for e in events]
                 m_names_precompute = m_names_precompute[event_filter]
 
-        self.m_names = m_names_precompute[use_dset_slice[0]:use_dset_slice[1]]
-        logging.getLogger(__name__).info(f"Using dataset slice in [{use_dset_slice[0]}, {use_dset_slice[1]}]")
+        self.m_names = m_names_precompute[use_dset_slice[0] : use_dset_slice[1]]
+        logging.getLogger(__name__).info(
+            f"Using dataset slice in [{use_dset_slice[0]}, {use_dset_slice[1]}]"
+        )
 
         self.load_magnetics = load_magnetics
         self.load_gravity = load_gravity
@@ -182,8 +188,8 @@ class NoddyDataset(Dataset):
         return self.len * self.repeat
 
     def __getitem__(self, index):
-        index = index % self.len  # for repeating
-        self._process(index)
+        idx = index % self.len  # for repeating
+        self._process(idx)
         return self.data
 
 
