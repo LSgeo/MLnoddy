@@ -21,7 +21,7 @@ labels = {
 inverse_labels = {v: k for k, v in labels.items()}
 
 
-@lru_cache(maxsize=2)
+@lru_cache()
 def load_noddy_csv(csv_path):
     """Return list of [(Event_triplet_string, model_filename)] present
     in csv_path. This can be used to generate a list of file names for models.
@@ -34,7 +34,7 @@ def load_noddy_csv(csv_path):
     ]
 
 
-@lru_cache(maxsize=6)
+@lru_cache()
 def load_noddy_allow_list(alllist, blocklist):
     """Generate a list of models in alllist that are not in blocklist"""
     alllist = load_noddy_csv(alllist)
@@ -119,8 +119,6 @@ class NoddyDataset(Dataset):
         load_gravity=False,
         load_geology=False,
         encode_label=False,
-        m_names_precompute: np.ndarray = None,  # with datatype np.string_
-        blocklist=None,
         use_dset_slice=[0, -1],
         norm=None,
         **kwargs,
@@ -130,24 +128,14 @@ class NoddyDataset(Dataset):
         self.norm = Norm(clip_min=norm[0], clip_max=norm[1]).min_max_clip
         self.unorm = Norm(clip_min=norm[0], clip_max=norm[1]).inverse_mmc
         self.m_dir = Path(model_dir)
-        if m_names_precompute is None:
-            m_names_precompute = load_noddy_allow_list(
-                kwargs["noddylist"],
-                kwargs.get("blocklist"),
-            )
-            if kwargs.get("events") is not None:
-                events = kwargs.get("events")
-                event_filter = [
-                    any(e in h[0] for e in events) for h in m_names_precompute
-                ]
-                m_names_precompute = m_names_precompute[event_filter]
 
-            m_names_precompute = np.array(m_names_precompute).astype(np.string_)
-            # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
-
-        self.m_names = m_names_precompute[use_dset_slice[0] : use_dset_slice[1]]
+        model_list = self._generate_model_lists(
+            kwargs["noddylist"], kwargs["blocklist"], kwargs.get("events")
+        )
+        start_id, stop_id = use_dset_slice
+        self.m_names = model_list[start_id:stop_id]
         logging.getLogger(__name__).info(
-            f"Using dataset slice in [{use_dset_slice[0]}, {use_dset_slice[1]}]"
+            f"Using dataset slice of [{start_id}, {stop_id}]"
         )
 
         self.load_magnetics = load_magnetics
@@ -160,6 +148,21 @@ class NoddyDataset(Dataset):
                 raise FileNotFoundError(f"{self.m_dir.absolute()} does not exist")
             else:
                 raise FileNotFoundError(f"No files found in {self.m_dir.absolute()}")
+
+    def _generate_model_lists(self, noddylist, blocklist, events):
+        """Collection of functions to process dataset lists"""
+        # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
+        model_list = load_noddy_allow_list(noddylist, blocklist)
+
+        if events is not None:
+            event_filter = [any(e in h[0] for e in events) for h in model_list]
+
+        model_list = np.array(model_list).astype(np.string_)
+
+        if events is not None:  # bool selection only on arr
+            model_list = model_list[event_filter]
+
+        return model_list
 
     def _process(self, index):
         """Convert parsed numpy arrays to tensors and augment"""
