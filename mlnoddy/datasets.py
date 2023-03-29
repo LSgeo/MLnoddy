@@ -1,5 +1,6 @@
 import time
 import logging
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -20,10 +21,10 @@ labels = {
 inverse_labels = {v: k for k, v in labels.items()}
 
 
+@lru_cache(maxsize=2)
 def load_noddy_csv(csv_path):
-    """Return list of .his files present in Noddy10k. N10K is used for
-    the test set, but these are included in the 1M model directories.
-    This list serves as a list of files to disclude from loading in trn/val.
+    """Return list of [(Event_triplet_string, model_filename)] present
+    in csv_path. This can be used to generate a list of file names for models.
     """
     lpath = Path(csv_path)
     paths = lpath.read_text().split(",")[6::5]
@@ -31,6 +32,14 @@ def load_noddy_csv(csv_path):
     return [
         (e.replace(" ", "_").split()[0], p.split("/")[2]) for e, p in zip(events, paths)
     ]
+
+
+@lru_cache(maxsize=6)
+def load_noddy_allow_list(alllist, blocklist):
+    """Generate a list of models in alllist that are not in blocklist"""
+    alllist = load_noddy_csv(alllist)
+    blocklist = load_noddy_csv(blocklist)
+    return [e_n for e_n in alllist if e_n not in blocklist]
 
 
 def parse_geology(pth, layer):
@@ -52,12 +61,15 @@ def parse_geophysics(pth: Path, mag=False, grv=False):
     # yield pd.read_csv(pth,sep="\t",skiprows=8,header=None,usecols=range(200),dtype=np.float32,na_filter=False,).values.astype(np.float32)
 
 
+@lru_cache()
 def encode_label(pth):
     """Return integer encoding for event history in Noddyverse"""
     return torch.tensor([labels[e] for e in pth.split("_")], dtype=torch.uint8)
 
 
 class Norm:
+    """Handle normalisation and unnormalisation of data with set min/max"""
+
     def __init__(self, clip_min=-5000, clip_max=5000):
         # TODO use our previously designed norm method
         # OR rEad tHOsE PaPeRS
@@ -119,16 +131,19 @@ class NoddyDataset(Dataset):
         self.unorm = Norm(clip_min=norm[0], clip_max=norm[1]).inverse_mmc
         self.m_dir = Path(model_dir)
         if m_names_precompute is None:
-            noddylist_list = load_noddy_csv(kwargs["noddylist"])
-            blocklist_list = load_noddy_csv(blocklist) if blocklist else []
-            m_names_precompute = [
-                his for his in noddylist_list if his not in blocklist_list
-            ]
+            m_names_precompute = load_noddy_allow_list(
+                kwargs["noddylist"],
+                kwargs.get("blocklist"),
+            )
+            if kwargs.get("events") is not None:
+                events = kwargs.get("events")
+                event_filter = [
+                    any(e in h[0] for e in events) for h in m_names_precompute
+                ]
+                m_names_precompute = m_names_precompute[event_filter]
+
             m_names_precompute = np.array(m_names_precompute).astype(np.string_)
             # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
-            if kwargs.get("events") is not None:
-                event_filter = [e in h[0] for h in m_names_precompute for e in events]
-                m_names_precompute = m_names_precompute[event_filter]
 
         self.m_names = m_names_precompute[use_dset_slice[0] : use_dset_slice[1]]
         logging.getLogger(__name__).info(
