@@ -59,8 +59,11 @@ def parse_geophysics(pth: Path, mag=False, grv=False):
         files = [files[0]]
     if not mag:
         files = [files[1]]
-    for pth in files:
-        yield np.ascontiguousarray(np.loadtxt(pth, skiprows=8, dtype=np.float32))
+    for f in files:
+        d = np.ascontiguousarray(np.loadtxt(f, skiprows=8, dtype=np.float32))
+        if d.min() == d.max(): # At least one noddyverse model is all 0 nT
+            d[0,0] = 1 # norm and grid doesn't like this, so add a tiny value
+        yield d
     # yield pd.read_csv(pth,sep="\t",skiprows=8,header=None,usecols=range(200),dtype=np.float32,na_filter=False,).values.astype(np.float32)
 
 
