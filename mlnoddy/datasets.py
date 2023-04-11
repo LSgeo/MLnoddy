@@ -80,6 +80,15 @@ class Norm:
         if self.min >= self.max:
             raise ValueError(f"Min ({self.min}) must be less than Max ({self.max})")
 
+    def per_sample_norm(self, grid):
+        """Per-tile normalisation to range [-1, 1]
+        We only set min and max on the HR and use these to normalise both HR/LR
+        inverse_mmc() is suitable to unnormalise.
+        """
+        self.min = grid.min()
+        self.max = grid.max()
+        return ((grid - self.min) / (self.max - self.min) * 2) - 1
+
     def min_max_clip(self, grid):
         """Clip to specified range and min-max normalise to range [-1, 1]"""
         grid[grid < self.min] = self.min
@@ -124,9 +133,12 @@ class NoddyDataset(Dataset):
         **kwargs,
     ):
         super().__init__()
-
-        self.norm = Norm(clip_min=norm[0], clip_max=norm[1]).min_max_clip
-        self.unorm = Norm(clip_min=norm[0], clip_max=norm[1]).inverse_mmc
+        if norm is not None:    
+            self.norm = Norm(clip_min=norm[0], clip_max=norm[1]).min_max_clip
+            self.unorm = Norm(clip_min=norm[0], clip_max=norm[1]).inverse_mmc
+        else:
+            self.norm = Norm().per_sample_norm
+            self.unorm = Norm().inverse_mmc
         self.m_dir = Path(model_dir)
 
         model_list = self._generate_model_lists(
@@ -185,7 +197,7 @@ class NoddyDataset(Dataset):
         # self.data["gt_path"] = torch.tensor(name.astype(np.string_))
 
         _data = [
-            torch.from_numpy(self.norm(g)).unsqueeze(0)
+            torch.from_numpy(g).unsqueeze(0)
             for g in parse_geophysics(f, self.load_magnetics, self.load_gravity)
         ]
 
