@@ -26,6 +26,9 @@ def load_noddy_csv(csv_path):
     """Return list of [(Event_triplet_string, model_filename)] present
     in csv_path. This can be used to generate a list of file names for models.
     """
+    if not csv_path: # Return empty list for compatability
+        return []
+
     lpath = Path(csv_path)
     paths = lpath.read_text().split(",")[6::5]
     events = lpath.read_text().split(",")[10::5]
