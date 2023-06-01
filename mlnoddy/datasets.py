@@ -26,7 +26,7 @@ def load_noddy_csv(csv_path):
     """Return list of [(Event_triplet_string, model_filename)] present
     in csv_path. This can be used to generate a list of file names for models.
     """
-    if not csv_path: # Return empty list for compatability
+    if not csv_path:  # Return empty list for compatability
         return []
 
     lpath = Path(csv_path)
@@ -38,11 +38,16 @@ def load_noddy_csv(csv_path):
 
 
 @lru_cache()
-def load_noddy_allow_list(alllist, blocklist):
+def load_noddy_allow_list(alllist, blocklist, file_cache=".noddy_allowlist.npy"):
     """Generate a list of models in alllist that are not in blocklist"""
-    alllist = load_noddy_csv(alllist)
-    blocklist = load_noddy_csv(blocklist)
-    return [e_n for e_n in alllist if e_n not in blocklist]
+    if Path(file_cache).exists():
+        allowlist = np.load(Path(file_cache), mmap_mode="r")
+    else:
+        alllist = load_noddy_csv(alllist)
+        blocklist = load_noddy_csv(blocklist)
+        allowlist = [e_n for e_n in alllist if e_n not in blocklist]
+        np.save(file_cache, allowlist)
+    return allowlist
 
 
 def parse_geology(pth, layer):
