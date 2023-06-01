@@ -1,11 +1,9 @@
-import time
 import logging
 from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 import torch
-import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset  # , IterableDataset, get_worker_info
 
 labels = {
@@ -66,8 +64,8 @@ def parse_geophysics(pth: Path, mag=False, grv=False):
         files = [files[1]]
     for f in files:
         d = np.ascontiguousarray(np.loadtxt(f, skiprows=8, dtype=np.float32))
-        if d.min() == d.max(): # At least one noddyverse model is all 0 nT
-            d[0,0] = 1 # norm and grid doesn't like this, so add a tiny value
+        if d.min() == d.max():  # If at least one noddyverse model is all 0 nT
+            d[0, 0] = 1  # norm and grid breaks, so add a tiny nT value
         yield d
     # yield pd.read_csv(pth,sep="\t",skiprows=8,header=None,usecols=range(200),dtype=np.float32,na_filter=False,).values.astype(np.float32)
 
@@ -81,13 +79,16 @@ def encode_label(pth):
 class Norm:
     """Handle normalisation and unnormalisation of data with set min/max"""
 
-    def __init__(self, clip_min=-5000, clip_max=5000):
+    def __init__(self, clip_min=-5000, clip_max=5000, out_vals=(0, 1)):
         # TODO use our previously designed norm method
         # OR rEad tHOsE PaPeRS
         """Defaults are suitable for noddyverse TMI"""
 
         self.min = clip_min
         self.max = clip_max
+        self.out_range = out_vals[1] - out_vals[0]
+        self.out_min = out_vals[0]
+        self.out_max = out_vals[1]
         if self.min >= self.max:
             raise ValueError(f"Min ({self.min}) must be less than Max ({self.max})")
 
@@ -96,15 +97,20 @@ class Norm:
         We only set min and max on the HR and use these to normalise both HR/LR
         inverse_mmc() is suitable to unnormalise.
         """
-        self.min = grid.min()
-        self.max = grid.max()
-        return ((grid - self.min) / (self.max - self.min) * 2) - 1
+        if self.min is None or self.max is None:
+            self.min = grid.min().item()
+            self.max = grid.max().item()
+        return (
+            (grid - self.min) / (self.max - self.min) * self.out_range
+        ) + self.out_min
 
     def min_max_clip(self, grid):
-        """Clip to specified range and min-max normalise to range [-1, 1]"""
+        """Clip to specified range and min-max normalise to range [0, 1]"""
         grid[grid < self.min] = self.min
         grid[grid > self.max] = self.max
-        return ((grid - self.min) / (self.max - self.min) * 2) - 1
+        return (
+            (grid - self.min) / (self.max - self.min) * self.out_range
+        ) + self.out_min
 
     def inverse_mmc(self, grid):
         """Inverse of min_max_clip, limited to +-self.clip"""
@@ -112,7 +118,9 @@ class Norm:
 
     def sample_min_max(self, grid):
         """Simple min-max normalisation unique to presented sample"""
-        return ((grid - grid.min()) / (grid.max() - grid.min()) * 2) - 1
+        return (
+            (grid - grid.min()) / (grid.max() - grid.min()) * self.out_range
+        ) + self.out_min
 
 
 class NoddyDataset(Dataset):
@@ -144,12 +152,16 @@ class NoddyDataset(Dataset):
         **kwargs,
     ):
         super().__init__()
-        if norm is not None:    
-            self.norm = Norm(clip_min=norm[0], clip_max=norm[1]).min_max_clip
-            self.unorm = Norm(clip_min=norm[0], clip_max=norm[1]).inverse_mmc
+        if norm is not None:
+            self.norm = Norm(
+                clip_min=norm[0], clip_max=norm[1], out_vals=(0, 1)
+            ).min_max_clip
+            self.unorm = Norm(
+                clip_min=norm[0], clip_max=norm[1], out_vals=(0, 1)
+            ).inverse_mmc
         else:
-            self.norm = Norm().per_sample_norm
-            self.unorm = Norm().inverse_mmc
+            self.norm = Norm(out_vals=(0, 1)).per_sample_norm
+            self.unorm = Norm(out_vals=(0, 1)).inverse_mmc
         self.m_dir = Path(model_dir)
 
         model_list = self._generate_model_lists(
