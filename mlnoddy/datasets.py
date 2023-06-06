@@ -39,6 +39,7 @@ def load_noddy_csv(csv_path):
 def load_noddy_allow_list(alllist, blocklist, file_cache=".noddy_allowlist.npy"):
     """Generate a list of models in alllist that are not in blocklist"""
     if Path(file_cache).exists():
+        print(f"Using cached file {Path(file_cache).absolute()}")
         allowlist = np.load(Path(file_cache), mmap_mode="r")
     else:
         alllist = load_noddy_csv(alllist)
@@ -109,17 +110,19 @@ class Norm:
         grid[grid < self.min] = self.min
         grid[grid > self.max] = self.max
         return (
-            (grid - self.min) / (self.max - self.min) * self.out_range
+            self.out_range * ((grid - self.min) / (self.max - self.min))
         ) + self.out_min
 
     def inverse_mmc(self, grid):
         """Inverse of min_max_clip, limited to +-self.clip"""
-        return ((grid + 1) / 2) * (self.max - self.min) + self.min
+        return (
+            (grid - self.out_min) * ((self.max - self.min) / self.out_range)
+        ) + self.min
 
     def sample_min_max(self, grid):
         """Simple min-max normalisation unique to presented sample"""
         return (
-            (grid - grid.min()) / (grid.max() - grid.min()) * self.out_range
+            self.out_range * (grid - grid.min()) / (grid.max() - grid.min())
         ) + self.out_min
 
 
@@ -165,7 +168,9 @@ class NoddyDataset(Dataset):
         self.m_dir = Path(model_dir)
 
         model_list = self._generate_model_lists(
-            kwargs["noddylist"], kwargs["blocklist"], kwargs.get("events")
+            noddylist=kwargs["noddylist"],
+            blocklist=kwargs["blocklist"],
+            events=kwargs.get("events"),
         )
         start_id, stop_id = use_dset_slice
         self.m_names = model_list[start_id:stop_id]
@@ -184,7 +189,7 @@ class NoddyDataset(Dataset):
             else:
                 raise FileNotFoundError(f"No files found in {self.m_dir.absolute()}")
 
-    def _generate_model_lists(self, noddylist, blocklist, events):
+    def _generate_model_lists(self, noddylist=None, blocklist=None, events=[]):
         """Collection of functions to process dataset lists"""
         # See https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
         model_list = load_noddy_allow_list(noddylist, blocklist)
