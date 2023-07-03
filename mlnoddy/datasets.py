@@ -80,7 +80,7 @@ def encode_label(pth):
 class Norm:
     """Handle normalisation and unnormalisation of data with set min/max"""
 
-    def __init__(self, clip_min=-5000, clip_max=5000, out_vals=(0, 1)):
+    def __init__(self, clip_min=-10000, clip_max=10000, out_vals=(0, 1)):
         # TODO use our previously designed norm method
         # OR rEad tHOsE PaPeRS
         """Defaults are suitable for noddyverse TMI"""
