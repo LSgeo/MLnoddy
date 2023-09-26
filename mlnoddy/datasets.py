@@ -182,8 +182,6 @@ class NoddyDataset(Dataset):
         self.load_gravity = load_gravity
         self.load_geology = load_geology
         self.encode_label = encode_label
-        self.gc = 20  # Ground truth cell size
-
         self.len = len(self.m_names)
         if not self.len:
             if not self.m_dir.exists():
@@ -206,7 +204,7 @@ class NoddyDataset(Dataset):
 
         return model_list
 
-    def _process(self, index, **kwargs):
+    def _process(self, index):
         """Convert parsed numpy arrays to tensors and augment"""
         self.data = {}
 
@@ -249,7 +247,7 @@ class NoddyDataset(Dataset):
 
     def __getitem__(self, index):
         idx = index % self.len  # for repeating
-        self._process(idx, gc=self.gc)
+        self._process(idx)
         return self.data
 
 
