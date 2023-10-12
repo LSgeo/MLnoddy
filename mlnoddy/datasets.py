@@ -225,17 +225,12 @@ class NoddyDataset(Dataset):
         if self.encode_label:
             self.data["label"] = encode_label(self.parent)
 
-        # self.data["gt_path"] = torch.tensor(name.astype(np.string_))
-
         _data = [
             torch.from_numpy(g).unsqueeze(0)
             for g in parse_geophysics(f, self.load_magnetics, self.load_gravity)
         ]
 
-        if self.load_magnetics and self.load_gravity:
-            self.data["gt_grid"] = torch.stack(_data, dim=0)
-        else:
-            self.data["gt_grid"] = _data[0]
+        # self.data["gt_path"] = torch.tensor(name.astype(np.string_))
 
         if self.load_geology:
             # This is mildly expensive - Could pass layer to np.loadtxt skips?
@@ -245,12 +240,16 @@ class NoddyDataset(Dataset):
                 parse_geology((f).with_suffix(".g12.gz"), layer=0)
             )
 
+        if self.load_magnetics and self.load_gravity:
+            self.data["gt_grid"] = torch.stack(_data, dim=0)
+        else:
+            self.data["gt_grid"] = _data[0]
+
     def __len__(self):
-        return self.len * self.repeat
+        return self.len
 
     def __getitem__(self, index):
-        idx = index % self.len  # for repeating
-        self._process(idx)
+        self._process(index)
         return self.data
 
 
@@ -274,3 +273,25 @@ class NoddyDataset(Dataset):
 #             iter_start = self.start + worker_id * per_worker
 #             iter_end = min(iter_start + per_worker, self.end)
 #             return iter(range(iter_start, iter_end))
+
+
+def e_size(s) -> float:
+    """Calculate inch for pyplot from elsevier figure widths
+    https://beta.elsevier.com/about/policies-and-standards/author/artwork-and-media-instructions/artwork-sizing
+    """
+    if isinstance(s, (int, float)):
+        mm = s
+    elif isinstance(s, str):
+        if s.lower() in ["minimal"]:
+            mm = 30
+        elif s == "1" or s.lower() in ["single"]:
+            mm = 90
+        elif s == "1.5":
+            mm = 140
+        elif s == "2" or s.lower() in ["double", "full"]:
+            mm = 190
+        else:
+            raise ValueError("Unsupported target size")
+    else:
+        raise ValueError(f"{s=}, {mm=}")
+    return mm / 25.4
